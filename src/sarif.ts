@@ -95,7 +95,10 @@ export function buildSarif(report: AuditReport): SarifLog {
     },
     properties: {
       required: check.required,
+      kind: check.kind,
       command: check.argv,
+      ...(check.requirementIds ? { requirementIds: check.requirementIds } : {}),
+      ...(check.acceptanceIds ? { acceptanceIds: check.acceptanceIds } : {}),
     },
   }));
 
@@ -117,11 +120,14 @@ export function buildSarif(report: AuditReport): SarifLog {
       ],
       properties: {
         status: check.status,
+        kind: check.kind,
         exitCode: check.exitCode,
         signal: check.signal,
         durationMs: check.durationMs,
         stdout: check.stdoutPath,
         stderr: check.stderrPath,
+        ...(check.requirementIds ? { requirementIds: check.requirementIds } : {}),
+        ...(check.acceptanceIds ? { acceptanceIds: check.acceptanceIds } : {}),
         ...(check.error ? { error: check.error } : {}),
       },
     });
@@ -149,6 +155,7 @@ export function buildSarif(report: AuditReport): SarifLog {
             workingDirectory: { uri: pathToFileURL(report.repoPath).href },
             properties: {
               overall: report.overall,
+              ...(report.profile ? { profile: report.profile } : {}),
               requiredFailures: report.checks.filter(
                 (check) => check.required && check.status !== 'passed',
               ).length,

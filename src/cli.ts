@@ -12,6 +12,7 @@ Usage:
 Options:
   --repo <path>      repository to audit (default: current directory)
   --config <path>    audit config, relative to repo (default: audit.config.json)
+  --profile <name>   run only the checks listed in the named config profile
   --out <path>       output directory, relative to repo (default: .code-audit)
   --help             show this help
   --version          show version
@@ -25,6 +26,7 @@ Exit codes:
 interface CliOptions {
   repo: string;
   config: string;
+  profile?: string;
   out: string;
   help: boolean;
   version: boolean;
@@ -49,12 +51,13 @@ function parseArgs(argv: string[]): CliOptions {
       options.version = true;
       continue;
     }
-    if (arg === '--repo' || arg === '--config' || arg === '--out') {
+    if (arg === '--repo' || arg === '--config' || arg === '--profile' || arg === '--out') {
       const value = argv[index + 1];
       if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value`);
       index += 1;
       if (arg === '--repo') options.repo = value;
       if (arg === '--config') options.config = value;
+      if (arg === '--profile') options.profile = value;
       if (arg === '--out') options.out = value;
       continue;
     }
@@ -78,9 +81,15 @@ async function main(): Promise<void> {
   const repoPath = resolve(options.repo);
   const configPath = resolve(repoPath, options.config);
   const outDir = resolve(repoPath, options.out);
-  const report = await runAudit({ repoPath, configPath, outDir });
+  const report = await runAudit({
+    repoPath,
+    configPath,
+    outDir,
+    ...(options.profile ? { profile: options.profile } : {}),
+  });
 
   process.stdout.write(`repo: ${report.repoPath}\n`);
+  if (report.profile) process.stdout.write(`profile: ${report.profile}\n`);
   if (report.git) {
     const commit = report.git.commit ? report.git.commit.slice(0, 12) : 'unknown';
     process.stdout.write(`git: ${report.git.branch ?? 'detached'} @ ${commit}${report.git.dirty ? ' (dirty)' : ''}\n`);
@@ -90,6 +99,11 @@ async function main(): Promise<void> {
       `[${check.status}] ${check.id} (${check.durationMs}ms)${check.error ? `: ${check.error}` : ''}\n`,
     );
   }
+  process.stdout.write(
+    `summary: ${report.summary.passed}/${report.summary.total} passed, ` +
+      `${report.summary.requiredFailures} required failure(s), ` +
+      `${report.summary.optionalFailures} optional failure(s)\n`,
+  );
   process.stdout.write(`overall: ${report.overall}\n`);
   process.stdout.write(`report: ${report.outDir}/report.json\n`);
   process.exitCode = report.overall === 'passed' ? 0 : 1;

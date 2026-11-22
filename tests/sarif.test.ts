@@ -7,6 +7,7 @@ function check(overrides: Partial<CheckResult> & Pick<CheckResult, 'id' | 'statu
   return {
     id,
     title: id,
+    kind: 'check',
     required: true,
     argv: ['node', '-e', 'process.exit(1)'],
     status,
@@ -29,7 +30,16 @@ function report(checks: CheckResult[]): AuditReport {
     outDir: '/tmp/example-repo/.code-audit',
     generatedAt: '2026-11-22T08:00:00.000Z',
     overall: 'failed',
+    summary: {
+      total: checks.length,
+      passed: checks.filter((check) => check.status === 'passed').length,
+      failed: checks.filter((check) => check.status !== 'passed').length,
+      requiredFailures: checks.filter((check) => check.required && check.status !== 'passed').length,
+      optionalFailures: checks.filter((check) => !check.required && check.status !== 'passed').length,
+      byKind: {},
+    },
     checks,
+    evidence: [],
   };
 }
 
@@ -37,8 +47,15 @@ describe('buildSarif', () => {
   it('maps required failures to error and optional failures to warning', () => {
     const sarif = buildSarif(
       report([
-        check({ id: 'typecheck', status: 'passed', exitCode: 0 }),
-        check({ id: 'required-test', status: 'failed', title: 'Required tests' }),
+        check({ id: 'typecheck', status: 'passed', exitCode: 0, kind: 'build' }),
+        check({
+          id: 'required-test',
+          status: 'failed',
+          title: 'Required tests',
+          kind: 'test',
+          requirementIds: ['REQ-001'],
+          acceptanceIds: ['AC-001'],
+        }),
         check({ id: 'optional-lint', status: 'timeout', required: false, durationMs: 1200 }),
       ]),
     );
@@ -46,7 +63,7 @@ describe('buildSarif', () => {
     expect(sarif.version).toBe('2.1.0');
     expect(sarif.$schema).toContain('sarif-schema-2.1.0.json');
     expect(sarif.runs[0]?.tool.driver.name).toBe('code-audit');
-    expect(sarif.runs[0]?.tool.driver.version).toBe('0.2.0');
+    expect(sarif.runs[0]?.tool.driver.version).toBe('0.3.0');
     expect(sarif.runs[0]?.tool.driver.rules).toHaveLength(3);
     expect(sarif.runs[0]?.results).toHaveLength(2);
 
@@ -54,6 +71,9 @@ describe('buildSarif', () => {
     expect(required?.ruleId).toBe('required-test');
     expect(required?.level).toBe('error');
     expect(required?.message.text).toContain('exit code 1');
+    expect(required?.properties.kind).toBe('test');
+    expect(required?.properties.requirementIds).toEqual(['REQ-001']);
+    expect(required?.properties.acceptanceIds).toEqual(['AC-001']);
     expect(required?.locations[0]?.physicalLocation.artifactLocation.uri).toBe(
       '.code-audit/checks/required-test.stdout.log',
     );

@@ -7,8 +7,12 @@ export { CODE_AUDIT_VERSION } from './version.js';
 export type {
   AuditConfig,
   AuditReport,
+  AuditSummary,
+  CheckKind,
   CheckResult,
   CheckSpec,
   CheckStatus,
+  EvidenceFile,
   GitInfo,
 } from './types.js';
+export { CHECK_KINDS } from './types.js';

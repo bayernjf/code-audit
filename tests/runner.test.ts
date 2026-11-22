@@ -1,7 +1,9 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { ConfigError } from '../src/config.js';
 import { runAudit } from '../src/runner.js';
 
 const tempDirs: string[] = [];
@@ -98,5 +100,98 @@ describe('runAudit', () => {
 
     expect(report.overall).toBe('failed');
     expect(report.checks[0]?.status).toBe('timeout');
+  });
+
+  it('runs only the selected profile and records its summary', async () => {
+    const repo = await tempRepo();
+    await writeFile(
+      join(repo, 'audit.config.json'),
+      JSON.stringify({
+        version: 1,
+        profiles: {
+          fast: ['typecheck'],
+          release: ['typecheck', 'acceptance'],
+        },
+        checks: [
+          {
+            id: 'typecheck',
+            kind: 'build',
+            argv: [process.execPath, '-e', 'console.log("typecheck")'],
+            requirementIds: ['REQ-001'],
+          },
+          {
+            id: 'acceptance',
+            kind: 'acceptance',
+            argv: [process.execPath, '-e', 'console.log("acceptance")'],
+            acceptanceIds: ['AC-001'],
+          },
+        ],
+      }),
+    );
+
+    const report = await runAudit({
+      repoPath: repo,
+      configPath: join(repo, 'audit.config.json'),
+      outDir: join(repo, '.code-audit'),
+      profile: 'fast',
+    });
+
+    expect(report.profile).toBe('fast');
+    expect(report.checks.map((check) => check.id)).toEqual(['typecheck']);
+    expect(report.summary).toMatchObject({
+      total: 1,
+      passed: 1,
+      failed: 0,
+      requiredFailures: 0,
+      optionalFailures: 0,
+      byKind: { build: 1 },
+    });
+    expect(report.checks[0]?.kind).toBe('build');
+    expect(report.checks[0]?.requirementIds).toEqual(['REQ-001']);
+    expect(report.evidence).toHaveLength(2);
+    expect(report.evidence[0]?.checkId).toBe('typecheck');
+    expect(report.evidence[0]?.stream).toBe('stdout');
+  });
+
+  it('hashes the exact evidence files it writes', async () => {
+    const repo = await tempRepo();
+    await writeFile(
+      join(repo, 'audit.config.json'),
+      JSON.stringify({
+        version: 1,
+        checks: [{ id: 'ok', argv: [process.execPath, '-e', 'console.log("hash me")'] }],
+      }),
+    );
+
+    const report = await runAudit({
+      repoPath: repo,
+      configPath: join(repo, 'audit.config.json'),
+      outDir: join(repo, '.code-audit'),
+    });
+
+    const stdout = await readFile(join(repo, '.code-audit', 'checks', 'ok.stdout.log'), 'utf8');
+    const expected = createHash('sha256').update(stdout, 'utf8').digest('hex');
+    expect(report.evidence.find((item) => item.stream === 'stdout')?.sha256).toBe(expected);
+  });
+
+  it('rejects an unknown profile before running checks', async () => {
+    const repo = await tempRepo();
+    await writeFile(
+      join(repo, 'audit.config.json'),
+      JSON.stringify({
+        version: 1,
+        profiles: { fast: ['ok'] },
+        checks: [{ id: 'ok', argv: [process.execPath, '-e', 'process.exit(0)'] }],
+      }),
+    );
+
+    await expect(
+      runAudit({
+        repoPath: repo,
+        configPath: join(repo, 'audit.config.json'),
+        outDir: join(repo, '.code-audit'),
+        profile: 'release',
+      }),
+    ).rejects.toThrow(ConfigError);
   });
 });

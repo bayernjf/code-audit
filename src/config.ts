@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises';
-import type { AuditConfig, CheckSpec } from './types.js';
+import { CHECK_KINDS, type AuditConfig, type CheckKind, type CheckSpec } from './types.js';
 
 export class ConfigError extends Error {
   constructor(message: string) {
@@ -9,6 +9,7 @@ export class ConfigError extends Error {
 }
 
 const MAX_CHECKS = 50;
+const MAX_IDS_PER_CHECK = 100;
 const MAX_TIMEOUT_MS = 600_000;
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -21,6 +22,29 @@ function nonEmptyString(value: unknown, field: string): string {
     throw new ConfigError(`${field} must be a non-empty string`);
   }
   return value.trim();
+}
+
+function idArray(value: unknown, field: string, maxItems: number): string[] {
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new ConfigError(`${field} must be a non-empty array`);
+  }
+  if (value.length > maxItems) {
+    throw new ConfigError(`${field} must contain at most ${maxItems} items`);
+  }
+  const items = value.map((item, index) => nonEmptyString(item, `${field}[${index}]`));
+  const seen = new Set<string>();
+  for (const item of items) {
+    if (!ID_PATTERN.test(item)) {
+      throw new ConfigError(`${field} items must match ${ID_PATTERN.source}`);
+    }
+    if (seen.has(item)) throw new ConfigError(`duplicate id in ${field}: ${item}`);
+    seen.add(item);
+  }
+  return items;
+}
+
+function isCheckKind(value: unknown): value is CheckKind {
+  return typeof value === 'string' && (CHECK_KINDS as readonly string[]).includes(value);
 }
 
 function validateCheck(value: unknown, index: number): CheckSpec {
@@ -39,6 +63,12 @@ function validateCheck(value: unknown, index: number): CheckSpec {
 
   if (value.title !== undefined) {
     check.title = nonEmptyString(value.title, `checks[${index}].title`);
+  }
+  if (value.kind !== undefined) {
+    if (!isCheckKind(value.kind)) {
+      throw new ConfigError(`checks[${index}].kind must be one of: ${CHECK_KINDS.join(', ')}`);
+    }
+    check.kind = value.kind;
   }
   if (value.cwd !== undefined) {
     const cwd = nonEmptyString(value.cwd, `checks[${index}].cwd`);
@@ -64,8 +94,50 @@ function validateCheck(value: unknown, index: number): CheckSpec {
     }
     check.timeoutMs = value.timeoutMs;
   }
+  if (value.requirementIds !== undefined) {
+    check.requirementIds = idArray(
+      value.requirementIds,
+      `checks[${index}].requirementIds`,
+      MAX_IDS_PER_CHECK,
+    );
+  }
+  if (value.acceptanceIds !== undefined) {
+    check.acceptanceIds = idArray(
+      value.acceptanceIds,
+      `checks[${index}].acceptanceIds`,
+      MAX_IDS_PER_CHECK,
+    );
+  }
 
   return check;
+}
+
+function validateProfiles(value: unknown, checks: CheckSpec[]): Record<string, string[]> {
+  if (!isRecord(value)) throw new ConfigError('config.profiles must be an object');
+  const names = Object.keys(value);
+  if (names.length === 0) throw new ConfigError('config.profiles must contain at least one profile');
+
+  const checkIds = new Set(checks.map((check) => check.id));
+  const profiles: Record<string, string[]> = {};
+
+  for (const name of names) {
+    if (!ID_PATTERN.test(name)) {
+      throw new ConfigError(`profile name must match ${ID_PATTERN.source}: ${name}`);
+    }
+    const ids = idArray(value[name], `profiles.${name}`, MAX_CHECKS);
+    for (const id of ids) {
+      if (!checkIds.has(id)) {
+        throw new ConfigError(`profile "${name}" references unknown check: ${id}`);
+      }
+    }
+    const selected = ids.map((id) => checks.find((check) => check.id === id));
+    if (!selected.some((check) => check !== undefined && check.required !== false)) {
+      throw new ConfigError(`profile "${name}" must include at least one required check`);
+    }
+    profiles[name] = ids;
+  }
+
+  return profiles;
 }
 
 export function validateConfig(value: unknown): AuditConfig {
@@ -85,7 +157,13 @@ export function validateConfig(value: unknown): AuditConfig {
     ids.add(check.id);
   }
 
-  return { version: 1, checks };
+  const profiles = value.profiles === undefined ? undefined : validateProfiles(value.profiles, checks);
+
+  return {
+    version: 1,
+    ...(profiles ? { profiles } : {}),
+    checks,
+  };
 }
 
 export async function loadConfig(configPath: string): Promise<AuditConfig> {
