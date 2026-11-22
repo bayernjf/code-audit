@@ -1,6 +1,6 @@
 # AGENTS.md — code-audit 工程规则
 
-本仓是内部工具/载体仓，不参与 Tier 0–4 产品分级。
+本仓是独立的代码审计工具仓。
 
 ## 硬边界
 
@@ -27,5 +27,6 @@ npm run typecheck && npm test && npm run build
 ## 提交
 
 - 英文原子提交：`<type>(<scope>): <subject>`。
-- 不 push；提交作者必须是用户本人，禁止 AI co-author trailer。
+- 推送前确认目标仓库、分支和可见性；禁止把密钥或内部数据带入公开历史。
+- 提交作者必须是用户本人，禁止 AI co-author trailer。
 - 未授权不得 commit。

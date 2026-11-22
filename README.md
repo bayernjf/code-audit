@@ -1,6 +1,6 @@
 # code-audit
 
-内部代码审计 + 测试证据跑器。它不是一个“AI 看代码”的产品，而是一条可复现的证据流水线：
+代码审计 + 测试证据跑器。它不是一个“AI 看代码”的产品，而是一条可复现的证据流水线：
 
 - 读取仓库里的 `audit.config.json`
 - 按配置顺序执行检查命令（无 shell）
@@ -16,10 +16,11 @@ npm run build
 node dist/cli.js --repo /path/to/repo --config audit.config.json --out .code-audit
 ```
 
-也可以直接用 npm 包入口：
+也可以本地 link 后使用命令入口：
 
 ```bash
-npx code-audit --repo . --config audit.config.json --out .code-audit
+npm link
+code-audit --repo . --config audit.config.json --out .code-audit
 ```
 
 ## 配置
@@ -73,4 +74,4 @@ npx code-audit --repo . --config audit.config.json --out .code-audit
 - **只允许可信本地仓库**。当前没有容器隔离，不能拿来跑不可信代码。
 - **不做 AI 代码审查**。LLM 解释、修复建议、测试生成是后续独立层。
 - **不做网络访问控制**。首版由调用方保证仓库和命令可信；容器/网络隔离是下一阶段。
-- 这是工具/载体仓，不参与 Tier 0–4 产品分级，不建 landing。
+- 这是独立工具仓，不依赖特定产品线。

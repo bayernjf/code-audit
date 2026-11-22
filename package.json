@@ -2,7 +2,7 @@
   "name": "code-audit",
   "version": "0.1.0",
   "private": true,
-  "description": "Internal code audit and test evidence runner.",
+  "description": "Reproducible code audit and test evidence runner.",
   "type": "module",
   "engines": {
     "node": ">=22.0.0"
