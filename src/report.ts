@@ -1,6 +1,7 @@
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { AuditReport } from './types.js';
+import { buildSarif } from './sarif.js';
 
 function cell(value: string): string {
   return value.replaceAll('|', '\\|').replaceAll('\n', ' ');
@@ -45,4 +46,5 @@ function markdown(report: AuditReport): string {
 export async function writeReports(report: AuditReport): Promise<void> {
   await writeFile(join(report.outDir, 'report.json'), `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   await writeFile(join(report.outDir, 'report.md'), markdown(report), 'utf8');
+  await writeFile(join(report.outDir, 'report.sarif'), `${JSON.stringify(buildSarif(report), null, 2)}\n`, 'utf8');
 }

@@ -61,7 +61,10 @@ code-audit --repo . --config audit.config.json --out .code-audit
 
 - `report.json`：机器可读证据包
 - `report.md`：人读摘要
+- `report.sarif`：SARIF 2.1.0 结果，可直接交给 GitHub Code Scanning 或其他 SARIF 消费者
 - `checks/<id>.stdout.log` / `checks/<id>.stderr.log`
+
+SARIF 映射规则：必选检查失败/超时/启动错误为 `error`，可选检查失败为 `warning`；通过的检查仍会出现在 `rules` 中，但不会产生 `results`。
 
 退出码：
 
@@ -73,5 +76,6 @@ code-audit --repo . --config audit.config.json --out .code-audit
 
 - **只允许可信本地仓库**。当前没有容器隔离，不能拿来跑不可信代码。
 - **不做 AI 代码审查**。LLM 解释、修复建议、测试生成是后续独立层。
+- **SARIF 不是 AI 结论**。它输出的是确定性检查结果和证据路径，不把模型意见写成漏洞。
 - **不做网络访问控制**。首版由调用方保证仓库和命令可信；容器/网络隔离是下一阶段。
 - 这是独立工具仓，不依赖特定产品线。

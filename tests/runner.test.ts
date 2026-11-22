@@ -44,6 +44,13 @@ describe('runAudit', () => {
     expect(json.overall).toBe('passed');
     const stdout = await readFile(join(repo, '.code-audit', 'checks', 'ok.stdout.log'), 'utf8');
     expect(stdout).toContain('hello audit');
+
+    const sarif = JSON.parse(await readFile(join(repo, '.code-audit', 'report.sarif'), 'utf8')) as {
+      version: string;
+      runs: { results: unknown[] }[];
+    };
+    expect(sarif.version).toBe('2.1.0');
+    expect(sarif.runs[0]?.results).toEqual([]);
   });
 
   it('marks a required failure as failed and keeps the evidence files', async () => {
