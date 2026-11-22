@@ -1,0 +1,24 @@
+{
+  "name": "code-audit",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Internal code audit and test evidence runner.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "bin": {
+    "code-audit": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "audit:self": "node dist/cli.js --repo . --config examples/audit.config.json --out .code-audit/self"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.9"
+  }
+}

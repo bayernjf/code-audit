@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "checks": [
+    {
+      "id": "typecheck",
+      "title": "TypeScript typecheck",
+      "argv": ["npm", "run", "typecheck"],
+      "required": true,
+      "timeoutMs": 120000
+    },
+    {
+      "id": "test",
+      "title": "Unit tests",
+      "argv": ["npm", "test"],
+      "required": true,
+      "timeoutMs": 120000
+    }
+  ]
+}
