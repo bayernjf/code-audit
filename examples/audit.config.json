@@ -1,9 +1,14 @@
 {
   "version": 1,
+  "profiles": {
+    "fast": ["typecheck"],
+    "release": ["typecheck", "test"]
+  },
   "checks": [
     {
       "id": "typecheck",
       "title": "TypeScript typecheck",
+      "kind": "build",
       "argv": ["npm", "run", "typecheck"],
       "required": true,
       "timeoutMs": 120000
@@ -11,9 +16,12 @@
     {
       "id": "test",
       "title": "Unit tests",
+      "kind": "test",
       "argv": ["npm", "test"],
       "required": true,
-      "timeoutMs": 120000
+      "timeoutMs": 120000,
+      "requirementIds": ["REQ-001"],
+      "acceptanceIds": ["AC-001"]
     }
   ]
 }
