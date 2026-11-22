@@ -2,6 +2,7 @@
 import { resolve } from 'node:path';
 import { ConfigError } from './config.js';
 import { runAudit } from './runner.js';
+import { CODE_AUDIT_VERSION } from './version.js';
 
 const HELP = `code-audit — run configured audit checks and write an evidence bundle.
 
@@ -70,7 +71,7 @@ async function main(): Promise<void> {
     return;
   }
   if (options.version) {
-    process.stdout.write('code-audit 0.1.0\n');
+    process.stdout.write(`code-audit ${CODE_AUDIT_VERSION}\n`);
     return;
   }
 
