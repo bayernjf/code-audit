@@ -5,8 +5,14 @@
 > 本段是本产品唯一活跃待办入口；完成一项改 `[x]`，并在「最近变更」留证据。
 > 最近同步：2026-11-25
 
-- [ ] **0.3.0 推送远端并同步 main** — 状态：open；本地 `dev` 领先 `origin/dev` 7 个提交，其中 0.3.0 相关 6 个（`305ec6e` 版本提升、`193ec2a` self-audit workflow 等），第 7 个是本 handoff 提交；下一步：owner 明确授权后 push `dev`，再按仓内流程合入 `main`；未授权前不 push。
-- [ ] **commerce-os CI 接入审计门** — 状态：open／blocked by 上一条；`commerce-os/audit.config.json`（fast / release profiles）已就绪，release 本地实测 6/6 passed（证据 `commerce-os/docs/delivery/2026-11-22-audit-gate.md`）；下一步：0.3.0 推送后，在 `commerce-os` CI 增加 `code-audit --profile release` 步骤。
+<!-- tier0:todos v1 -->
+| id | title | status | priority | owner | next | evidence | updated |
+|---|---|---|---|---|---|---|---|
+| CA-01 | 0.3.0 推送远端并同步 main | open | p1 | owner | owner 明确授权后 push `dev`，再按仓内流程合入 `main` | `handoff.md` | 2026-11-25 |
+| CA-02 | commerce-os CI 接入审计门 | blocked | p1 | self | 0.3.0 推送后，在 commerce-os CI 增加 `code-audit --profile release` | `commerce-os/docs/delivery/2026-11-22-audit-gate.md` | 2026-11-25 |
+<!-- /tier0:todos -->
+
+本地 `dev` 领先 `origin/dev` 7 个提交（0.3.0 相关 6 个 + 本 handoff 提交）；未授权前不 push。release 本地实测 6/6 passed。
 
 ## 当前状态（2026-11-25 复核）
 
