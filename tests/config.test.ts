@@ -44,4 +44,69 @@ describe('validateConfig', () => {
       validateConfig({ version: 1, checks: [{ id: 'a', argv: 'npm test' }] }),
     ).toThrow(/argv/);
   });
+
+  it('accepts profiles and per-check evidence metadata', () => {
+    const config = {
+      version: 1,
+      profiles: {
+        fast: ['typecheck'],
+        release: ['typecheck', 'acceptance'],
+      },
+      checks: [
+        { id: 'typecheck', kind: 'build', argv: ['npm', 'run', 'typecheck'] },
+        {
+          id: 'acceptance',
+          kind: 'acceptance',
+          argv: ['npm', 'run', 'test:e2e'],
+          requirementIds: ['REQ-001'],
+          acceptanceIds: ['AC-001'],
+        },
+      ],
+    };
+    expect(validateConfig(config)).toEqual(config);
+  });
+
+  it('rejects a profile that references an unknown check', () => {
+    expect(() =>
+      validateConfig({
+        version: 1,
+        profiles: { fast: ['missing'] },
+        checks: [{ id: 'typecheck', argv: ['true'] }],
+      }),
+    ).toThrow(/unknown check/);
+  });
+
+  it('rejects a profile without any required check', () => {
+    expect(() =>
+      validateConfig({
+        version: 1,
+        profiles: { fast: ['optional'] },
+        checks: [{ id: 'optional', argv: ['true'], required: false }],
+      }),
+    ).toThrow(/at least one required check/);
+  });
+
+  it('rejects an invalid check kind', () => {
+    expect(() =>
+      validateConfig({
+        version: 1,
+        checks: [{ id: 'a', argv: ['true'], kind: 'lint' }],
+      }),
+    ).toThrow(/kind/);
+  });
+
+  it('rejects duplicate requirement ids', () => {
+    expect(() =>
+      validateConfig({
+        version: 1,
+        checks: [
+          {
+            id: 'a',
+            argv: ['true'],
+            requirementIds: ['REQ-001', 'REQ-001'],
+          },
+        ],
+      }),
+    ).toThrow(/duplicate id/);
+  });
 });

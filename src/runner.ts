@@ -1,11 +1,19 @@
 import { spawn } from 'node:child_process';
 import type { ChildProcess } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { mkdir, stat, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
-import { loadConfig } from './config.js';
+import { ConfigError, loadConfig } from './config.js';
 import { readGitInfo } from './git.js';
 import { writeReports } from './report.js';
-import type { AuditReport, CheckResult, CheckSpec } from './types.js';
+import type {
+  AuditConfig,
+  AuditReport,
+  AuditSummary,
+  CheckResult,
+  CheckSpec,
+  EvidenceFile,
+} from './types.js';
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024;
@@ -14,6 +22,7 @@ export interface RunAuditOptions {
   repoPath: string;
   configPath: string;
   outDir: string;
+  profile?: string;
   maxOutputBytes?: number;
 }
 
@@ -22,6 +31,11 @@ interface CollectedOutput {
   bytes: number;
   kept: number;
   truncated: boolean;
+}
+
+interface CheckExecution {
+  result: CheckResult;
+  evidence: EvidenceFile[];
 }
 
 function appendOutput(collected: CollectedOutput, chunk: Buffer | string, maxBytes: number): void {
@@ -43,6 +57,10 @@ function renderOutput(collected: CollectedOutput): string {
   return `${body}\n...[truncated ${collected.bytes - collected.kept} bytes]\n`;
 }
 
+function digest(text: string): string {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
 function resolveInside(repoPath: string, pathValue: string): string {
   const resolved = resolve(repoPath, pathValue);
   const rel = relative(repoPath, resolved);
@@ -52,12 +70,25 @@ function resolveInside(repoPath: string, pathValue: string): string {
   return resolved;
 }
 
+function selectChecks(config: AuditConfig, profile: string | undefined): CheckSpec[] {
+  if (profile === undefined) return config.checks;
+
+  const selectedProfile = config.profiles?.[profile];
+  if (!selectedProfile) throw new ConfigError(`unknown profile: ${profile}`);
+
+  return selectedProfile.map((id) => {
+    const check = config.checks.find((candidate) => candidate.id === id);
+    if (!check) throw new ConfigError(`profile "${profile}" references unknown check: ${id}`);
+    return check;
+  });
+}
+
 async function runCheck(
   repoPath: string,
   outDir: string,
   check: CheckSpec,
   maxOutputBytes: number,
-): Promise<CheckResult> {
+): Promise<CheckExecution> {
   const cwd = resolveInside(repoPath, check.cwd ?? '.');
   const startedAt = process.hrtime.bigint();
   const stdout: CollectedOutput = { chunks: [], bytes: 0, kept: 0, truncated: false };
@@ -124,25 +155,80 @@ async function runCheck(
         ? 'passed'
         : 'failed';
 
+  const stdoutText = renderOutput(stdout);
+  const stderrText = renderOutput(stderr);
   const stdoutPath = join('checks', `${check.id}.stdout.log`);
   const stderrPath = join('checks', `${check.id}.stderr.log`);
-  await writeFile(join(outDir, stdoutPath), renderOutput(stdout), 'utf8');
-  await writeFile(join(outDir, stderrPath), renderOutput(stderr), 'utf8');
+  const stdoutSha256 = digest(stdoutText);
+  const stderrSha256 = digest(stderrText);
+
+  await writeFile(join(outDir, stdoutPath), stdoutText, 'utf8');
+  await writeFile(join(outDir, stderrPath), stderrText, 'utf8');
 
   return {
-    id: check.id,
-    title: check.title ?? check.id,
-    required: check.required ?? true,
-    argv: check.argv,
-    status,
-    exitCode,
-    signal,
-    durationMs: Math.round(durationMs),
-    stdoutPath,
-    stderrPath,
-    stdoutBytes: stdout.bytes,
-    stderrBytes: stderr.bytes,
-    ...(errorMessage ? { error: errorMessage } : {}),
+    result: {
+      id: check.id,
+      title: check.title ?? check.id,
+      kind: check.kind ?? 'check',
+      required: check.required ?? true,
+      argv: check.argv,
+      status,
+      exitCode,
+      signal,
+      durationMs: Math.round(durationMs),
+      stdoutPath,
+      stderrPath,
+      stdoutBytes: stdout.bytes,
+      stderrBytes: stderr.bytes,
+      ...(check.requirementIds ? { requirementIds: check.requirementIds } : {}),
+      ...(check.acceptanceIds ? { acceptanceIds: check.acceptanceIds } : {}),
+      ...(errorMessage ? { error: errorMessage } : {}),
+    },
+    evidence: [
+      {
+        checkId: check.id,
+        stream: 'stdout',
+        path: stdoutPath,
+        sha256: stdoutSha256,
+        bytes: stdout.bytes,
+        truncated: stdout.truncated,
+      },
+      {
+        checkId: check.id,
+        stream: 'stderr',
+        path: stderrPath,
+        sha256: stderrSha256,
+        bytes: stderr.bytes,
+        truncated: stderr.truncated,
+      },
+    ],
+  };
+}
+
+function summarize(checks: CheckResult[]): AuditSummary {
+  const byKind: Record<string, number> = {};
+  let passed = 0;
+  let requiredFailures = 0;
+  let optionalFailures = 0;
+
+  for (const check of checks) {
+    byKind[check.kind] = (byKind[check.kind] ?? 0) + 1;
+    if (check.status === 'passed') {
+      passed += 1;
+    } else if (check.required) {
+      requiredFailures += 1;
+    } else {
+      optionalFailures += 1;
+    }
+  }
+
+  return {
+    total: checks.length,
+    passed,
+    failed: checks.length - passed,
+    requiredFailures,
+    optionalFailures,
+    byKind,
   };
 }
 
@@ -151,17 +237,26 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
   const configPath = resolve(options.configPath);
   const outDir = resolve(options.outDir);
   const maxOutputBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
+  const profile = options.profile?.trim();
+
+  if (options.profile !== undefined && profile === '') {
+    throw new ConfigError('profile must be a non-empty string');
+  }
 
   const info = await stat(repoPath);
   if (!info.isDirectory()) throw new Error(`repo is not a directory: ${repoPath}`);
 
   const config = await loadConfig(configPath);
+  const selectedChecks = selectChecks(config, profile);
   await mkdir(join(outDir, 'checks'), { recursive: true });
 
   const git = await readGitInfo(repoPath);
   const checks: CheckResult[] = [];
-  for (const check of config.checks) {
-    checks.push(await runCheck(repoPath, outDir, check, maxOutputBytes));
+  const evidence: EvidenceFile[] = [];
+  for (const check of selectedChecks) {
+    const execution = await runCheck(repoPath, outDir, check, maxOutputBytes);
+    checks.push(execution.result);
+    evidence.push(...execution.evidence);
   }
 
   const overall: AuditReport['overall'] = checks.every((check) => !check.required || check.status === 'passed')
@@ -174,9 +269,12 @@ export async function runAudit(options: RunAuditOptions): Promise<AuditReport> {
     configPath,
     outDir,
     generatedAt: new Date().toISOString(),
+    ...(profile ? { profile } : {}),
     ...(git ? { git } : {}),
     overall,
+    summary: summarize(checks),
     checks,
+    evidence,
   };
 
   await writeReports(report);
